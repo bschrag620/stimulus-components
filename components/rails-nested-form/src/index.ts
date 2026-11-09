@@ -4,6 +4,7 @@ export default class RailsNestedForm extends Controller {
   declare targetTarget: HTMLElement
   declare templateTarget: HTMLElement
   declare wrapperSelectorValue: string
+  declare newRecordTokenValue: string
 
   static targets = ["target", "template"]
   static values = {
@@ -11,12 +12,31 @@ export default class RailsNestedForm extends Controller {
       type: String,
       default: ".nested-form-wrapper",
     },
+    newRecordToken: {
+      type: String,
+      default: "NEW_RECORD",
+    },
   }
 
+  // When a template contains a descendant nested-form template of its own
+  // (a record whose own template adds records of its own, e.g. a question
+  // with choices), every level sharing the literal token "NEW_RECORD" is
+  // ambiguous: an id meant for this level and an id meant for the
+  // descendant can both appear in the same attribute value (an attribute
+  // that includes both nesting levels, like a choice's name attribute
+  // including its question's index too), and a single shared token can't
+  // tell them apart. Give each nesting level its own distinct token via
+  // newRecordTokenValue instead, so replacing only this level's own token
+  // is unambiguous even across the entire template string -- descendant
+  // templates included, since this level's token can legitimately recur
+  // deep inside a descendant's own markup and needs resolving there too,
+  // while the descendant's differently-named token is left untouched for
+  // its own later add() call.
   add(e: Event): void {
     e.preventDefault()
 
-    const content: string = this.renderTemplate(new Date().getTime().toString())
+    const id = new Date().getTime().toString()
+    const content = this.templateTarget.innerHTML.split(this.newRecordTokenValue).join(id)
     this.targetTarget.insertAdjacentHTML("beforebegin", content)
 
     const event = new CustomEvent("rails-nested-form:add", { bubbles: true })
@@ -41,26 +61,5 @@ export default class RailsNestedForm extends Controller {
 
     const event = new CustomEvent("rails-nested-form:remove", { bubbles: true })
     this.element.dispatchEvent(event)
-  }
-
-  // A plain string replace would also rewrite the NEW_RECORD token of any
-  // descendant nested-form template inside this one (a record whose own
-  // template adds records of its own). Re-parsing into a <template> keeps
-  // nested <template> content where it belongs: its content lives in a
-  // separate, inert document fragment that isn't part of this one's normal
-  // child tree, so walking the parsed DOM skips over it without having to
-  // special-case it.
-  private renderTemplate(id: string): string {
-    const wrapper = document.createElement("template")
-    wrapper.innerHTML = this.templateTarget.innerHTML
-
-    wrapper.content.querySelectorAll("[name], [id], [for]").forEach((el) => {
-      for (const attr of ["name", "id", "for"]) {
-        const value = el.getAttribute(attr)
-        if (value) el.setAttribute(attr, value.split("NEW_RECORD").join(id))
-      }
-    })
-
-    return wrapper.innerHTML
   }
 }
